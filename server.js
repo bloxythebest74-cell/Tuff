@@ -9,24 +9,17 @@ app.get("/", (req, res) => {
     res.json({
         name: "Roblox Video Browser",
         status: "online",
-        search: "/api/search?q=music"
+        search: "/api/search?q=Ronaldo"
     });
 });
 
 app.get("/api/search", async (req, res) => {
     const query = String(req.query.q || "").trim();
 
-    if (!query) {
+    if (!query || query.length > 150) {
         return res.status(400).json({
             success: false,
-            error: "Enter a search query."
-        });
-    }
-
-    if (query.length > 150) {
-        return res.status(400).json({
-            success: false,
-            error: "Search query is too long."
+            error: "Enter a search query of up to 150 characters."
         });
     }
 
@@ -40,25 +33,15 @@ app.get("/api/search", async (req, res) => {
 
         const videos = (result.items || [])
             .filter(item => item.type === "video")
-            .map(item => {
-                const thumbnails = Array.isArray(item.thumbnail)
-                    ? item.thumbnail
-                    : [];
-
-                return {
-                    id: item.id || item.videoId || "",
-                    title: item.title || "Untitled",
-                    channel:
-                        item.channelTitle ||
-                        item.shortBylineText ||
-                        "",
-                    thumbnail:
-                        thumbnails.length > 0
-                            ? thumbnails[thumbnails.length - 1].url || ""
-                            : "",
-                    isLive: Boolean(item.isLive)
-                };
-            });
+            .map(item => ({
+                id: item.id || item.videoId || "",
+                title: item.title || "Untitled",
+                channel: item.channelTitle || "",
+                thumbnail: Array.isArray(item.thumbnail)
+                    ? (item.thumbnail[item.thumbnail.length - 1]?.url || "")
+                    : "",
+                isLive: Boolean(item.isLive)
+            }));
 
         res.json({
             success: true,
@@ -71,7 +54,7 @@ app.get("/api/search", async (req, res) => {
 
         res.status(502).json({
             success: false,
-            error: "YouTube search failed. Try again later."
+            error: "YouTube search failed."
         });
     }
 });
