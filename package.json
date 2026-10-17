@@ -1,14 +1,14 @@
 
 {
-  "name": "roblox-video-browser",
+  "name": "roblox-gemini-backend",
   "version": "1.0.0",
-  "private": true,
+  "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
     "express": "^4.21.2",
-    "youtube-search-api": "^2.0.1",
-    "ws": "^8.18.3"
+    "youtube-search-api": "^1.2.2",
+    "ws": "^8.18.0"
   }
 }
