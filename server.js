@@ -1,229 +1,124 @@
 
 const express = require("express");
-const youtube = require("youtube-search-api");
-const { execFile } = require("child_process");
 const http = require("http");
-const { WebSocketServer, WebSocket } = require("ws");
-const ytdlp = require("youtube-dl-exec");
+const { WebSocketServer } = require("ws");
+const Youtube = require("youtube-search-api");
+const { execFile } = require("child_process");
 
 const app = express();
-app.use(express.json());
+const server = http.createServer(app);
+const wss = new WebSocketServer({ server });
+
+const PORT = process.env.PORT || 3000;
 
 app.get("/", (req, res) => {
     res.json({
-        name: "Roblox Video Browser",
         status: "online",
-        search: "/api/search?q=MrBeast",
-        frame: "/api/frame?videoId=dQw4w9WgXcQ&time=0",
-        ffmpegTest: "/api/ffmpeg-check",
-        websocketTest: "/ws-test-page"
+        message: "Roblox YouTube backend is running",
+        routes: [
+            "/api/search?q=Ronaldo",
+            "/api/ffmpeg-check",
+            "/ws-test-page"
+        ]
     });
 });
 
 app.get("/api/search", async (req, res) => {
-    const query = String(req.query.q || "").trim();
-
-    if (!query || query.length > 150) {
-        return res.status(400).json({
-            success: false,
-            error: "Enter a search query of up to 150 characters."
-        });
-    }
-
     try {
-        const result = await youtube.GetListByKeyword(
-            query, false, 10, [{ type: "video" }]
+        const q = String(req.query.q || "").trim();
+
+        if (!q) {
+            return res.status(400).json({
+                error: "Please provide a search query."
+            });
+        }
+
+        const results = await Youtube.GetListByKeyword(
+            q,
+            false,
+            20
         );
 
-        const videos = (result.items || [])
-            .filter(item => item.type === "video")
+        const items = (results.items || [])
+            .filter(item => item.type === "video" || item.id)
             .map(item => ({
-                id: item.id || item.videoId || "",
-                title: item.title || "Untitled",
+                title: item.title || "Untitled video",
+                id: item.id || "",
                 channel: item.channelTitle || "",
-                thumbnail: Array.isArray(item.thumbnail)
-                    ? item.thumbnail[item.thumbnail.length - 1]?.url || ""
-                    : "",
-                isLive: Boolean(item.isLive)
+                thumbnail:
+                    item.thumbnail?.thumbnails?.slice(-1)[0]?.url || ""
             }));
 
-        res.json({
-            success: true,
-            query,
-            count: videos.length,
-            videos
-        });
+        res.json({ results: items });
     } catch (error) {
-        console.error("YouTube search failed:", error.message);
-        res.status(502).json({
-            success: false,
+        console.error("YouTube search error:", error.message);
+
+        res.status(500).json({
             error: "YouTube search failed."
         });
     }
 });
 
-// Extract one JPEG frame from a YouTube video.
-app.get("/api/frame", async (req, res) => {
-    const videoId = String(req.query.videoId || "");
-    const time = Number(req.query.time || 0);
-
-    if (!/^[a-zA-Z0-9_-]{11}$/.test(videoId)) {
-        return res.status(400).json({
-            success: false,
-            error: "Invalid YouTube video ID."
-        });
-    }
-
-    if (!Number.isFinite(time) || time < 0 || time > 3600) {
-        return res.status(400).json({
-            success: false,
-            error: "Time must be between 0 and 3600 seconds."
-        });
-    }
-
-    try {
-        const videoUrl =
-            "https://www.youtube.com/watch?v=" + videoId;
-
-        const streamUrl = await ytdlp(videoUrl, {
-            getUrl: true,
-            format: "best[height<=360]/best",
-            noPlaylist: true,
-            noWarnings: true
-        });
-
-        const inputUrl = String(streamUrl).trim().split("\n")[0];
-
-        if (!inputUrl.startsWith("https://")) {
-            throw new Error("Could not obtain video stream URL.");
-        }
-
-        execFile("ffmpeg", [
-            "-hide_banner",
-            "-loglevel", "error",
-            "-ss", String(time),
-            "-i", inputUrl,
-            "-frames:v", "1",
-            "-vf", "scale=640:-2",
-            "-f", "image2pipe",
-            "-vcodec", "mjpeg",
-            "pipe:1"
-        ], {
-            encoding: "buffer",
-            maxBuffer: 5 * 1024 * 1024,
-            timeout: 20000
-        }, (error, stdout) => {
-            if (error || !stdout || stdout.length === 0) {
-                console.error("Frame extraction failed:",
-                    error?.message);
-
-                return res.status(502).json({
-                    success: false,
-                    error: "Could not extract a video frame."
-                });
-            }
-
-            res.set("Cache-Control", "no-store");
-            res.type("image/jpeg").send(stdout);
-        });
-    } catch (error) {
-        console.error("Frame endpoint failed:", error.message);
-
-        if (!res.headersSent) {
-            res.status(502).json({
-                success: false,
-                error: "Could not access this video's stream."
-            });
-        }
-    }
-});
-
 app.get("/api/ffmpeg-check", (req, res) => {
-    execFile("ffmpeg", ["-version"], { timeout: 5000 },
-        (error, stdout) => {
-            if (error) {
-                return res.json({
-                    success: false,
-                    installed: false
-                });
-            }
-
-            res.json({
-                success: true,
-                installed: true,
-                version: stdout.split("\n")[0]
+    execFile("ffmpeg", ["-version"], (error, stdout) => {
+        if (error) {
+            return res.status(500).json({
+                available: false,
+                error: error.message
             });
         }
-    );
+
+        res.json({
+            available: true,
+            version: stdout.split("\n")[0]
+        });
+    });
 });
 
 app.get("/ws-test-page", (req, res) => {
-    res.type("html").send(`<!doctype html>
+    res.type("html").send(`<!DOCTYPE html>
 <html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Live Connection Test</title>
+<title>WebSocket Test</title>
 </head>
-<body style="font-family:sans-serif;padding:20px">
-<h2>Live Connection Test</h2>
-<p>Status: <span id="status">Connecting...</span></p>
-<pre id="messages"></pre>
+<body>
+<h2>WebSocket Test</h2>
+<pre id="status">Connecting...</pre>
 <script>
 const status = document.getElementById("status");
-const messages = document.getElementById("messages");
-const socket = new WebSocket(
-    (location.protocol === "https:" ? "wss://" : "ws://") +
-    location.host + "/ws-test"
-);
-socket.onopen = () => status.textContent = "Connected";
-socket.onmessage = e => messages.textContent += e.data + "\\n";
-socket.onerror = () => status.textContent = "Connection error";
-socket.onclose = () => status.textContent = "Disconnected";
+const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+const socket = new WebSocket(protocol + "//" + location.host);
+
+socket.onopen = () => {
+    status.textContent = "Connected to backend";
+    socket.send("Hello from test page");
+};
+
+socket.onmessage = event => {
+    status.textContent += "\\n" + event.data;
+};
+
+socket.onerror = () => {
+    status.textContent += "\\nConnection error";
+};
+
+socket.onclose = () => {
+    status.textContent += "\\nConnection closed";
+};
 </script>
 </body>
 </html>`);
 });
 
-const server = http.createServer(app);
-
-const wss = new WebSocketServer({
-    server,
-    path: "/ws-test"
-});
-
 wss.on("connection", socket => {
-    let count = 0;
+    socket.send("WebSocket connected successfully");
 
-    socket.send(JSON.stringify({
-        type: "connected",
-        message: "Live connection established"
-    }));
-
-    const timer = setInterval(() => {
-        if (socket.readyState !== WebSocket.OPEN) {
-            clearInterval(timer);
-            return;
-        }
-
-        count++;
-
-        socket.send(JSON.stringify({
-            type: "test",
-            number: count,
-            time: new Date().toISOString()
-        }));
-
-        if (count >= 20) {
-            clearInterval(timer);
-            socket.close();
-        }
-    }, 1000);
-
-    socket.on("close", () => clearInterval(timer));
+    socket.on("message", message => {
+        socket.send("Server received: " + message.toString());
+    });
 });
-
-const PORT = process.env.PORT || 3000;
 
 server.listen(PORT, "0.0.0.0", () => {
-    console.log("Video browser backend running on port " + PORT);
+    console.log("Backend listening on port " + PORT);
 });
