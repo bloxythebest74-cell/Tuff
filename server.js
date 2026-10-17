@@ -47,9 +47,14 @@ app.get("/api/search", async (req, res) => {
                 isLive: Boolean(item.isLive)
             }));
 
-        res.json({ success: true, query, count: videos.length, videos });
+        res.json({
+            success: true,
+            query,
+            count: videos.length,
+            videos
+        });
     } catch (error) {
-        console.error("Search failed:", error.message);
+        console.error("YouTube search failed:", error.message);
         res.status(502).json({
             success: false,
             error: "YouTube search failed."
@@ -57,7 +62,7 @@ app.get("/api/search", async (req, res) => {
     }
 });
 
-// Extract one JPEG frame from a publicly accessible YouTube video.
+// Extract one JPEG frame from a YouTube video.
 app.get("/api/frame", async (req, res) => {
     const videoId = String(req.query.videoId || "");
     const time = Number(req.query.time || 0);
@@ -77,20 +82,20 @@ app.get("/api/frame", async (req, res) => {
     }
 
     try {
-        const videoUrl = "https://www.youtube.com/watch?v=" + videoId;
+        const videoUrl =
+            "https://www.youtube.com/watch?v=" + videoId;
 
         const streamUrl = await ytdlp(videoUrl, {
             getUrl: true,
             format: "best[height<=360]/best",
             noPlaylist: true,
-            noWarnings: true,
-            noCheckCertificates: false
+            noWarnings: true
         });
 
         const inputUrl = String(streamUrl).trim().split("\n")[0];
 
         if (!inputUrl.startsWith("https://")) {
-            throw new Error("Could not obtain video stream.");
+            throw new Error("Could not obtain video stream URL.");
         }
 
         execFile("ffmpeg", [
@@ -109,10 +114,12 @@ app.get("/api/frame", async (req, res) => {
             timeout: 20000
         }, (error, stdout) => {
             if (error || !stdout || stdout.length === 0) {
-                console.error("Frame extraction failed:", error?.message);
+                console.error("Frame extraction failed:",
+                    error?.message);
+
                 return res.status(502).json({
                     success: false,
-                    error: "Could not extract a frame from this video."
+                    error: "Could not extract a video frame."
                 });
             }
 
@@ -132,23 +139,31 @@ app.get("/api/frame", async (req, res) => {
 });
 
 app.get("/api/ffmpeg-check", (req, res) => {
-    execFile("ffmpeg", ["-version"], { timeout: 5000 }, (error, stdout) => {
-        if (error) {
-            return res.json({ success: false, installed: false });
-        }
+    execFile("ffmpeg", ["-version"], { timeout: 5000 },
+        (error, stdout) => {
+            if (error) {
+                return res.json({
+                    success: false,
+                    installed: false
+                });
+            }
 
-        res.json({
-            success: true,
-            installed: true,
-            version: stdout.split("\n")[0]
-        });
-    });
+            res.json({
+                success: true,
+                installed: true,
+                version: stdout.split("\n")[0]
+            });
+        }
+    );
 });
 
 app.get("/ws-test-page", (req, res) => {
     res.type("html").send(`<!doctype html>
-<html><head><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Live Connection Test</title></head>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Live Connection Test</title>
+</head>
 <body style="font-family:sans-serif;padding:20px">
 <h2>Live Connection Test</h2>
 <p>Status: <span id="status">Connecting...</span></p>
@@ -164,11 +179,17 @@ socket.onopen = () => status.textContent = "Connected";
 socket.onmessage = e => messages.textContent += e.data + "\\n";
 socket.onerror = () => status.textContent = "Connection error";
 socket.onclose = () => status.textContent = "Disconnected";
-</script></body></html>`);
+</script>
+</body>
+</html>`);
 });
 
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server, path: "/ws-test" });
+
+const wss = new WebSocketServer({
+    server,
+    path: "/ws-test"
+});
 
 wss.on("connection", socket => {
     let count = 0;
@@ -185,6 +206,7 @@ wss.on("connection", socket => {
         }
 
         count++;
+
         socket.send(JSON.stringify({
             type: "test",
             number: count,
@@ -201,6 +223,7 @@ wss.on("connection", socket => {
 });
 
 const PORT = process.env.PORT || 3000;
+
 server.listen(PORT, "0.0.0.0", () => {
     console.log("Video browser backend running on port " + PORT);
 });
