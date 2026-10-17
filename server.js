@@ -1,6 +1,7 @@
 
 const express = require("express");
 const youtube = require("youtube-search-api");
+const { execFile } = require("child_process");
 
 const app = express();
 app.use(express.json());
@@ -9,7 +10,8 @@ app.get("/", (req, res) => {
     res.json({
         name: "Roblox Video Browser",
         status: "online",
-        search: "/api/search?q=Ronaldo"
+        search: "/api/search?q=MrBeast",
+        ffmpegTest: "/api/ffmpeg-check"
     });
 });
 
@@ -38,7 +40,7 @@ app.get("/api/search", async (req, res) => {
                 title: item.title || "Untitled",
                 channel: item.channelTitle || "",
                 thumbnail: Array.isArray(item.thumbnail)
-                    ? (item.thumbnail[item.thumbnail.length - 1]?.url || "")
+                    ? item.thumbnail[item.thumbnail.length - 1]?.url || ""
                     : "",
                 isLive: Boolean(item.isLive)
             }));
@@ -57,6 +59,29 @@ app.get("/api/search", async (req, res) => {
             error: "YouTube search failed."
         });
     }
+});
+
+app.get("/api/ffmpeg-check", (req, res) => {
+    execFile(
+        "ffmpeg",
+        ["-version"],
+        { timeout: 5000 },
+        (error, stdout) => {
+            if (error) {
+                return res.status(200).json({
+                    success: false,
+                    installed: false,
+                    message: "FFmpeg is not available on this server."
+                });
+            }
+
+            res.json({
+                success: true,
+                installed: true,
+                version: stdout.split("\n")[0]
+            });
+        }
+    );
 });
 
 const PORT = process.env.PORT || 3000;
